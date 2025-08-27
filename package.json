@@ -97,7 +97,10 @@
     "docker:reset": "scripts/docker-dev.sh reset",
     "services:up": "pnpm docker:up",
     "services:down": "pnpm docker:down",
-    "services:status": "pnpm docker:status"
+    "services:status": "pnpm docker:status",
+    "env:setup": "scripts/setup-env.sh",
+    "env:validate": "node scripts/validate-env.js",
+    "env:generate-secrets": "node scripts/validate-env.js --generate-secrets"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
