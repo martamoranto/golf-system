@@ -1,0 +1,395 @@
+# GitHub Branch Protection Configuration
+# Used with probot/settings app or manual configuration
+# Defines branch protection rules for main and develop branches
+
+# Repository settings
+repository:
+  # Repository name (if different from GitHub repo name)
+  name: final-golf-saas
+
+  # Repository description
+  description: "Golf Booking SaaS Platform - A comprehensive B2B SaaS platform for golf courses with booking management, POS, and marketplace features"
+
+  # Repository homepage
+  homepage: https://finalgolf.com
+
+  # Repository topics
+  topics:
+    - golf
+    - booking
+    - saas
+    - nextjs
+    - typescript
+    - prisma
+    - monorepo
+    - pnpm-workspace
+
+  # Default branch
+  default_branch: main
+
+  # Repository features
+  has_issues: true
+  has_projects: true
+  has_wiki: false
+  has_downloads: false
+
+  # Security settings
+  delete_branch_on_merge: true
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: true
+  allow_auto_merge: true
+
+# Branch protection rules
+branches:
+  # Main branch protection (production)
+  - name: main
+    protection:
+      # Require status checks to pass before merging
+      required_status_checks:
+        # Require branches to be up to date before merging
+        strict: true
+        # Required status checks
+        contexts:
+          - "CI Pipeline / Validate Workspace"
+          - "CI Pipeline / Lint & Format Check"
+          - "CI Pipeline / Type Check"
+          - "CI Pipeline / Run Tests (unit)"
+          - "CI Pipeline / Build Validation (packages)"
+          - "CI Pipeline / Build Validation (apps)"
+          - "CI Pipeline / Security Audit"
+          - "CI Pipeline / CI Summary"
+
+      # Require pull request reviews before merging
+      required_pull_request_reviews:
+        # Number of required approving reviews
+        required_approving_review_count: 2
+        # Dismiss stale reviews when new commits are pushed
+        dismiss_stale_reviews: true
+        # Require review from code owners
+        require_code_owner_reviews: true
+        # Allow specific users to dismiss reviews
+        dismissal_restrictions:
+          users: []
+          teams: []
+        # Require review from someone other than the person who opened the PR
+        require_last_push_approval: true
+
+      # Enforce restrictions for administrators
+      enforce_admins: false
+
+      # Restrict pushes to specific users/teams
+      restrictions:
+        users: []
+        teams: []
+        apps: []
+
+      # Require linear history (no merge commits)
+      required_linear_history: true
+
+      # Prohibit force pushes
+      allow_force_pushes: false
+
+      # Prohibit deletions
+      allow_deletions: false
+
+      # Block creations (prevent direct commits)
+      block_creations: false
+
+      # Required conversation resolution
+      required_conversation_resolution: true
+
+      # Lock branch (prevent any pushes)
+      lock_branch: false
+
+  # Develop branch protection (staging)
+  - name: develop
+    protection:
+      # Require status checks to pass before merging
+      required_status_checks:
+        # Require branches to be up to date before merging
+        strict: true
+        # Required status checks (same as main but more lenient)
+        contexts:
+          - "CI Pipeline / Validate Workspace"
+          - "CI Pipeline / Lint & Format Check"
+          - "CI Pipeline / Type Check"
+          - "CI Pipeline / Run Tests (unit)"
+          - "CI Pipeline / Build Validation (packages)"
+          - "CI Pipeline / Build Validation (apps)"
+          - "CI Pipeline / CI Summary"
+
+      # Require pull request reviews before merging
+      required_pull_request_reviews:
+        # Number of required approving reviews
+        required_approving_review_count: 1
+        # Dismiss stale reviews when new commits are pushed
+        dismiss_stale_reviews: true
+        # Require review from code owners for sensitive files
+        require_code_owner_reviews: true
+        # Allow specific users to dismiss reviews
+        dismissal_restrictions:
+          users: []
+          teams: []
+        # Don't require review from someone other than PR author (more flexible for develop)
+        require_last_push_approval: false
+
+      # Don't enforce restrictions for administrators (allow admin override in develop)
+      enforce_admins: false
+
+      # No push restrictions for develop branch
+      restrictions:
+        users: []
+        teams: []
+        apps: []
+
+      # Don't require linear history in develop (allow merge commits)
+      required_linear_history: false
+
+      # Prohibit force pushes
+      allow_force_pushes: false
+
+      # Prohibit deletions
+      allow_deletions: false
+
+      # Allow branch creation
+      block_creations: false
+
+      # Required conversation resolution
+      required_conversation_resolution: true
+
+      # Don't lock develop branch
+      lock_branch: false
+
+  # Release branch protection pattern
+  - name: "release/*"
+    protection:
+      # Require status checks to pass before merging
+      required_status_checks:
+        strict: true
+        contexts:
+          - "CI Pipeline / CI Summary"
+
+      # Require pull request reviews
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+
+      # Enforce for admins
+      enforce_admins: true
+
+      # Require linear history
+      required_linear_history: true
+
+      # Prohibit force pushes and deletions
+      allow_force_pushes: false
+      allow_deletions: false
+
+  # Hotfix branch protection pattern
+  - name: "hotfix/*"
+    protection:
+      # Require essential status checks only (for emergency fixes)
+      required_status_checks:
+        strict: false # Allow emergency merges
+        contexts:
+          - "CI Pipeline / Validate Workspace"
+          - "CI Pipeline / Lint & Format Check"
+          - "CI Pipeline / Type Check"
+
+      # Require pull request reviews but allow emergency override
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: false # Keep reviews during hotfixes
+        require_code_owner_reviews: true
+
+      # Don't enforce for admins (allow emergency override)
+      enforce_admins: false
+
+      # Allow force pushes for emergency situations
+      allow_force_pushes: true
+      allow_deletions: false
+
+# Issue and PR labels
+labels:
+  # Size labels
+  - name: "size/small"
+    color: "0E8A16"
+    description: "Small change (< 100 lines)"
+
+  - name: "size/medium"
+    color: "FBCA04"
+    description: "Medium change (100-300 lines)"
+
+  - name: "size/large"
+    color: "D93F0B"
+    description: "Large change (> 300 lines)"
+
+  # Risk labels
+  - name: "risk/low"
+    color: "0E8A16"
+    description: "Low risk change"
+
+  - name: "risk/medium"
+    color: "FBCA04"
+    description: "Medium risk change"
+
+  - name: "risk/high"
+    color: "D93F0B"
+    description: "High risk change"
+
+  # Type labels
+  - name: "type/feature"
+    color: "84B6EB"
+    description: "New feature implementation"
+
+  - name: "type/bug"
+    color: "D73A4A"
+    description: "Bug fix"
+
+  - name: "type/enhancement"
+    color: "A2EEEF"
+    description: "Enhancement to existing feature"
+
+  - name: "type/refactor"
+    color: "BFD4F2"
+    description: "Code refactoring"
+
+  - name: "type/docs"
+    color: "0075CA"
+    description: "Documentation changes"
+
+  - name: "type/chore"
+    color: "FEF2C0"
+    description: "Maintenance and chores"
+
+  # Status labels
+  - name: "status/ready-for-review"
+    color: "0E8A16"
+    description: "Ready for code review"
+
+  - name: "status/needs-fixes"
+    color: "D93F0B"
+    description: "Needs fixes before merge"
+
+  - name: "status/work-in-progress"
+    color: "FBCA04"
+    description: "Work in progress"
+
+  - name: "status/blocked"
+    color: "B60205"
+    description: "Blocked by external dependency"
+
+  # Special labels
+  - name: "breaking-change"
+    color: "D93F0B"
+    description: "Contains breaking changes"
+
+  - name: "security"
+    color: "B60205"
+    description: "Security-related changes"
+
+  - name: "performance"
+    color: "FFC649"
+    description: "Performance improvements"
+
+  - name: "dependencies"
+    color: "0366D6"
+    description: "Dependency updates"
+
+  # Priority labels
+  - name: "priority/critical"
+    color: "B60205"
+    description: "Critical priority"
+
+  - name: "priority/high"
+    color: "D93F0B"
+    description: "High priority"
+
+  - name: "priority/medium"
+    color: "FBCA04"
+    description: "Medium priority"
+
+  - name: "priority/low"
+    color: "0E8A16"
+    description: "Low priority"
+
+  # Component labels
+  - name: "component/web"
+    color: "FF6B6B"
+    description: "Web application changes"
+
+  - name: "component/api"
+    color: "4ECDC4"
+    description: "API changes"
+
+  - name: "component/admin"
+    color: "45B7D1"
+    description: "Admin application changes"
+
+  - name: "component/database"
+    color: "96CEB4"
+    description: "Database schema or migration changes"
+
+  - name: "component/ci-cd"
+    color: "FFEAA7"
+    description: "CI/CD pipeline changes"
+
+# Milestones (if using project management)
+milestones:
+  - title: "Phase 0 - Foundation"
+    description: "Monorepo setup, development environment, and CI/CD foundation"
+    due_on: "2024-02-15T00:00:00Z"
+    state: open
+
+  - title: "Phase 1 - Core Packages"
+    description: "Database, schemas, types, services, and auth packages"
+    due_on: "2024-03-01T00:00:00Z"
+    state: open
+
+  - title: "Phase 2 - API & Services"
+    description: "API gateway and background services implementation"
+    due_on: "2024-03-15T00:00:00Z"
+    state: open
+
+  - title: "Phase 3 - Customer App"
+    description: "Customer-facing web application"
+    due_on: "2024-04-01T00:00:00Z"
+    state: open
+
+  - title: "Phase 4 - Admin Apps"
+    description: "Admin applications and onsite PWA"
+    due_on: "2024-04-15T00:00:00Z"
+    state: open
+
+  - title: "Phase 5 - Testing & QA"
+    description: "Comprehensive testing and quality assurance"
+    due_on: "2024-05-01T00:00:00Z"
+    state: open
+
+  - title: "Phase 6 - Deployment"
+    description: "Production deployment and launch"
+    due_on: "2024-05-15T00:00:00Z"
+    state: open
+
+# Collaboration settings
+collaborators:
+  # Add team members here when ready
+  # - username: teammate1
+  #   permission: admin
+  # - username: teammate2
+  #   permission: write
+  # - username: teammate3
+  #   permission: read
+
+# Teams (if using GitHub Teams)
+teams:
+  # Core development team
+  # - name: core-developers
+  #   permission: admin
+  # - name: backend-team
+  #   permission: write
+  # - name: frontend-team
+  #   permission: write
+  # - name: qa-team
+  #   permission: write

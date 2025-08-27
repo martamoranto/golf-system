@@ -1,0 +1,168 @@
+# Reusable Workflow Template - Node.js Setup
+# Standardized Node.js and PNPM setup with caching for all workflows
+# Provides consistent environment setup across CI/CD pipelines
+
+name: 🏗️ Node.js Setup Template
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: "Node.js version to use"
+        required: false
+        default: "18.17.0"
+        type: string
+      pnpm-version:
+        description: "PNPM version to use"
+        required: false
+        default: "8.15.1"
+        type: string
+      install-dependencies:
+        description: "Whether to install dependencies"
+        required: false
+        default: true
+        type: boolean
+      cache-dependency-path:
+        description: "Path to package manager lock file"
+        required: false
+        default: "pnpm-lock.yaml"
+        type: string
+      working-directory:
+        description: "Working directory for the setup"
+        required: false
+        default: "."
+        type: string
+      install-args:
+        description: "Additional arguments for pnpm install"
+        required: false
+        default: "--frozen-lockfile --prefer-offline"
+        type: string
+    outputs:
+      node-version:
+        description: "Node.js version used"
+        value: ${{ jobs.setup.outputs.node-version }}
+      pnpm-version:
+        description: "PNPM version used"
+        value: ${{ jobs.setup.outputs.pnpm-version }}
+      cache-hit:
+        description: "Whether cache was hit"
+        value: ${{ jobs.setup.outputs.cache-hit }}
+
+jobs:
+  setup:
+    name: 🏗️ Setup Node.js Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      node-version: ${{ steps.setup-node.outputs.node-version }}
+      pnpm-version: ${{ steps.setup-pnpm.outputs.pnpm-version }}
+      cache-hit: ${{ steps.cache-deps.outputs.cache-hit }}
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # Shallow clone for faster checkout
+
+      - name: 📦 Setup PNPM
+        id: setup-pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+          run_install: false
+        env:
+          # Optimize PNPM performance
+          PNPM_HOME: ~/.pnpm
+
+      - name: 🏗️ Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "pnpm"
+          cache-dependency-path: ${{ inputs.cache-dependency-path }}
+        env:
+          # Optimize Node.js performance
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
+      - name: 🔍 Verify Setup
+        run: |
+          echo "🔍 Verifying environment setup..."
+          echo "Node.js version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          echo "PNPM version: $(pnpm --version)"
+          echo "Working directory: $(pwd)"
+
+          # Check if lockfile exists
+          if [[ -f "${{ inputs.cache-dependency-path }}" ]]; then
+            echo "✅ Lockfile found: ${{ inputs.cache-dependency-path }}"
+          else
+            echo "⚠️ Lockfile not found: ${{ inputs.cache-dependency-path }}"
+          fi
+
+      - name: 📦 Cache Dependencies
+        id: cache-deps
+        if: inputs.install-dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+            */node_modules
+            .pnpm-debug.log*
+          key: pnpm-deps-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles(inputs.cache-dependency-path) }}
+          restore-keys: |
+            pnpm-deps-${{ runner.os }}-node${{ inputs.node-version }}-
+            pnpm-deps-${{ runner.os }}-
+
+      - name: 📥 Install Dependencies
+        if: inputs.install-dependencies
+        run: |
+          echo "📥 Installing dependencies with PNPM..."
+          echo "Arguments: ${{ inputs.install-args }}"
+
+          # Set PNPM configuration for CI optimization
+          pnpm config set store-dir ~/.pnpm-store
+          pnpm config set cache-dir ~/.pnpm-cache
+          pnpm config set state-dir ~/.pnpm-state
+
+          # Install with specified arguments
+          pnpm install ${{ inputs.install-args }}
+
+          echo "✅ Dependencies installed successfully"
+        env:
+          NODE_ENV: development
+          CI: true
+          # Optimize installation performance
+          PNPM_CACHE_FOLDER: ~/.pnpm-cache
+          PNPM_STATE_FOLDER: ~/.pnpm-state
+
+      - name: 📊 Installation Summary
+        if: inputs.install-dependencies
+        run: |
+          echo "📊 Installation Summary"
+          echo "======================"
+          echo "Cache hit: ${{ steps.cache-deps.outputs.cache-hit }}"
+          echo "Node.js: $(node --version)"
+          echo "PNPM: $(pnpm --version)"
+          echo "Dependencies: $(pnpm list --depth=0 2>/dev/null | wc -l) packages"
+          echo ""
+
+          # Show disk usage
+          echo "💾 Disk Usage:"
+          du -sh ~/.pnpm-store 2>/dev/null || echo "PNPM store: Not found"
+          du -sh node_modules 2>/dev/null || echo "node_modules: Not found"
+
+          echo ""
+          echo "✅ Environment setup completed successfully"
+
+# Default environment variables for all setup operations
+env:
+  CI: true
+  FORCE_COLOR: 3
+  NODE_ENV: development
