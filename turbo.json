@@ -1,0 +1,193 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env.production.local",
+        ".env.local",
+        ".env.production",
+        ".env"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**",
+        "build/**",
+        "out/**"
+      ],
+      "env": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "NEXTAUTH_URL",
+        "NEXTAUTH_SECRET"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"],
+      "env": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "NEXTAUTH_URL",
+        "NEXTAUTH_SECRET",
+        "REDIS_URL"
+      ]
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".eslintrc.js",
+        ".eslintrc.json",
+        ".eslintrc.cjs",
+        ".eslintignore",
+        "eslint.config.js"
+      ],
+      "outputs": [
+        ".eslintcache"
+      ]
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".eslintrc.js",
+        ".eslintrc.json",
+        ".eslintrc.cjs",
+        ".eslintignore",
+        "eslint.config.js"
+      ],
+      "cache": false
+    },
+    "type-check": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "tsconfig.json",
+        "tsconfig.*.json"
+      ],
+      "outputs": [
+        "**/*.tsbuildinfo"
+      ]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "vitest.config.*",
+        "jest.config.*",
+        "playwright.config.*"
+      ],
+      "outputs": [
+        "coverage/**",
+        "test-results/**"
+      ],
+      "env": [
+        "NODE_ENV"
+      ]
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "vitest.config.*",
+        "jest.config.*"
+      ],
+      "outputs": [
+        "coverage/**"
+      ]
+    },
+    "clean": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false,
+      "inputs": [
+        "prisma/schema.prisma",
+        "schema.prisma"
+      ],
+      "outputs": [
+        "node_modules/.prisma/**",
+        "generated/**"
+      ]
+    },
+    "db:migrate": {
+      "cache": false,
+      "inputs": [
+        "prisma/schema.prisma",
+        "schema.prisma",
+        "prisma/migrations/**"
+      ]
+    },
+    "db:migrate:dev": {
+      "cache": false,
+      "inputs": [
+        "prisma/schema.prisma",
+        "schema.prisma"
+      ]
+    },
+    "db:seed": {
+      "cache": false,
+      "dependsOn": ["db:generate"]
+    },
+    "db:push": {
+      "cache": false,
+      "inputs": [
+        "prisma/schema.prisma",
+        "schema.prisma"
+      ]
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
+    },
+    "format": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".prettierrc",
+        ".prettierrc.json",
+        ".prettierrc.js",
+        "prettier.config.js",
+        ".prettierignore"
+      ],
+      "cache": false
+    },
+    "format:check": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".prettierrc",
+        ".prettierrc.json",
+        ".prettierrc.js",
+        "prettier.config.js",
+        ".prettierignore"
+      ]
+    }
+  },
+  "globalDependencies": [
+    ".env",
+    ".env.local",
+    ".env.production.local",
+    ".env.development.local",
+    "tsconfig.json",
+    "tsconfig.base.json",
+    ".eslintrc.js",
+    ".eslintrc.json",
+    ".prettierrc",
+    "tailwind.config.js",
+    "next.config.js"
+  ]
+}

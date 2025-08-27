@@ -1,0 +1,12 @@
+# PNPM Workspace Configuration for Final Golf SaaS
+# This file defines the monorepo workspace structure
+
+packages:
+  # Main applications
+  - "apps/*"
+  
+  # Shared packages and libraries
+  - "packages/*"
+  
+  # Background services
+  - "services/*"
