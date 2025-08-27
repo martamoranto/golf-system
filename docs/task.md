@@ -5,7 +5,7 @@
 ### 0.1 Monorepo Initialization
 
 - [x] **0.1.1** Initialize PNPM workspace
-  - Create pnpm-workspace.yaml with apps/* and packages/* patterns
+  - Create pnpm-workspace.yaml with apps/_ and packages/_ patterns
   - Configure dependency hoisting strategy
   - Set strict peer dependencies configuration
   - Setup shared dependencies at root level
@@ -19,7 +19,7 @@
 
 - [x] **0.1.3** TypeScript Configuration
   - Create tsconfig.base.json at root
-  - Setup path aliases for all packages (@gbs/*)
+  - Setup path aliases for all packages (@gbs/\*)
   - Configure strict mode and compiler options
   - Create individual tsconfig.json files extending base
   - Setup tsconfig.build.json for production builds
@@ -33,7 +33,7 @@
 
 ### 0.2 Development Environment
 
-- [ ] **0.2.1** Docker Compose Setup
+- [x] **0.2.1** Docker Compose Setup
   - Configure PostgreSQL 15 container with health checks
   - Setup Redis container with persistence volume
   - Add MinIO container for S3-compatible storage
@@ -41,21 +41,21 @@
   - Setup networking between containers
   - Create volume mappings for data persistence
 
-- [ ] **0.2.2** Environment Configuration
+- [x] **0.2.2** Environment Configuration
   - Create .env.example templates for all apps
   - Document all required environment variables
   - Setup environment validation scripts
   - Configure local development defaults
   - Create environment setup documentation
 
-- [ ] **0.2.3** Git Configuration
+- [x] **0.2.3** Git Configuration
   - Initialize repository with comprehensive .gitignore
   - Setup Husky for git hooks
   - Configure commitlint for conventional commits
   - Setup lint-staged for pre-commit checks
   - Create branch protection rules documentation
 
-- [ ] **0.2.4** CI/CD Foundation
+- [x] **0.2.4** CI/CD Foundation
   - Setup GitHub Actions workflow structure
   - Configure dependency caching
   - Create reusable workflow templates

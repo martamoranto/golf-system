@@ -1,0 +1,355 @@
+# Reusable Workflow Template - Quality Checks
+# Standardized quality assurance checks including linting, type checking, and testing
+# Provides consistent quality gates across all components
+
+name: 🔍 Quality Check Template
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Target to check (all/packages/apps/services/specific-name)"
+        required: false
+        default: "all"
+        type: string
+      skip-tests:
+        description: "Skip test execution"
+        required: false
+        default: false
+        type: boolean
+      skip-lint:
+        description: "Skip linting"
+        required: false
+        default: false
+        type: boolean
+      skip-type-check:
+        description: "Skip type checking"
+        required: false
+        default: false
+        type: boolean
+      coverage-threshold:
+        description: "Minimum test coverage percentage"
+        required: false
+        default: "80"
+        type: string
+      lint-max-warnings:
+        description: "Maximum number of lint warnings allowed"
+        required: false
+        default: "0"
+        type: string
+    outputs:
+      lint-result:
+        description: "Lint check result"
+        value: ${{ jobs.quality-check.outputs.lint-result }}
+      type-check-result:
+        description: "Type check result"
+        value: ${{ jobs.quality-check.outputs.type-check-result }}
+      test-result:
+        description: "Test result"
+        value: ${{ jobs.quality-check.outputs.test-result }}
+      coverage-percentage:
+        description: "Test coverage percentage"
+        value: ${{ jobs.quality-check.outputs.coverage-percentage }}
+
+jobs:
+  quality-check:
+    name: 🔍 Quality Assurance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    outputs:
+      lint-result: ${{ steps.lint-check.outputs.result }}
+      type-check-result: ${{ steps.type-check.outputs.result }}
+      test-result: ${{ steps.test-check.outputs.result }}
+      coverage-percentage: ${{ steps.test-check.outputs.coverage }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏗️ Setup Node.js Environment
+        uses: ./.github/workflows/_template-nodejs-setup.yml
+        with:
+          install-dependencies: true
+
+      - name: 📋 Quality Check Configuration
+        run: |
+          echo "🔍 Quality Check Configuration"
+          echo "============================="
+          echo "Target: ${{ inputs.target }}"
+          echo "Skip tests: ${{ inputs.skip-tests }}"
+          echo "Skip lint: ${{ inputs.skip-lint }}"
+          echo "Skip type check: ${{ inputs.skip-type-check }}"
+          echo "Coverage threshold: ${{ inputs.coverage-threshold }}%"
+          echo "Max lint warnings: ${{ inputs.lint-max-warnings }}"
+          echo ""
+
+      - name: 🧹 Lint Check
+        id: lint-check
+        if: inputs.skip-lint != true
+        run: |
+          echo "🧹 Running ESLint checks..."
+
+          # Determine lint target
+          case "${{ inputs.target }}" in
+            all)
+              LINT_COMMAND="pnpm run ci:lint"
+              ;;
+            packages)
+              LINT_COMMAND="pnpm run lint:packages"
+              ;;
+            apps)
+              LINT_COMMAND="pnpm run lint:apps"
+              ;;
+            services)
+              LINT_COMMAND="pnpm run lint:services"
+              ;;
+            *)
+              # Check if it's a specific component
+              if [[ -d "packages/${{ inputs.target }}" ]]; then
+                LINT_COMMAND="pnpm run lint --filter @gbs/${{ inputs.target }}"
+              elif [[ -d "apps/${{ inputs.target }}" ]]; then
+                LINT_COMMAND="pnpm run lint --filter @gbs/${{ inputs.target }}"
+              elif [[ -d "services/${{ inputs.target }}" ]]; then
+                LINT_COMMAND="pnpm run lint --filter @gbs/${{ inputs.target }}"
+              else
+                echo "⚠️ Unknown target: ${{ inputs.target }}"
+                LINT_COMMAND="pnpm run ci:lint"
+              fi
+              ;;
+          esac
+
+          echo "🔍 Running: $LINT_COMMAND"
+
+          # Run linting and capture output
+          if $LINT_COMMAND 2>&1 | tee lint-results.txt; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "✅ Lint check passed"
+            
+            # Check for warnings
+            WARNING_COUNT=$(grep -c "warning" lint-results.txt || echo "0")
+            echo "⚠️ Warnings found: $WARNING_COUNT"
+            
+            if [[ "$WARNING_COUNT" -gt "${{ inputs.lint-max-warnings }}" ]]; then
+              echo "❌ Warning count ($WARNING_COUNT) exceeds maximum allowed (${{ inputs.lint-max-warnings }})"
+              echo "result=failure" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "❌ Lint check failed"
+            exit 1
+          fi
+        continue-on-error: false
+
+      - name: 🔍 Type Check
+        id: type-check
+        if: inputs.skip-type-check != true
+        run: |
+          echo "🔍 Running TypeScript type checks..."
+
+          # Determine type check target
+          case "${{ inputs.target }}" in
+            all)
+              TYPE_CHECK_COMMAND="pnpm run ci:type-check"
+              ;;
+            packages)
+              TYPE_CHECK_COMMAND="pnpm run type-check:packages"
+              ;;
+            apps)
+              TYPE_CHECK_COMMAND="pnpm run type-check:apps"
+              ;;
+            services)
+              TYPE_CHECK_COMMAND="pnpm run type-check:services"
+              ;;
+            *)
+              # Check if it's a specific component
+              if [[ -d "packages/${{ inputs.target }}" ]] || [[ -d "apps/${{ inputs.target }}" ]] || [[ -d "services/${{ inputs.target }}" ]]; then
+                TYPE_CHECK_COMMAND="pnpm run type-check --filter @gbs/${{ inputs.target }}"
+              else
+                echo "⚠️ Unknown target: ${{ inputs.target }}"
+                TYPE_CHECK_COMMAND="pnpm run ci:type-check"
+              fi
+              ;;
+          esac
+
+          echo "🔍 Running: $TYPE_CHECK_COMMAND"
+
+          # Generate Prisma client if needed
+          echo "🗄️ Generating Prisma client..."
+          pnpm run db:generate || echo "⚠️ Prisma generate failed or not available"
+
+          # Run type checking
+          if $TYPE_CHECK_COMMAND 2>&1 | tee type-check-results.txt; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "✅ Type check passed"
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "❌ Type check failed"
+            
+            # Show type errors for debugging
+            echo "🔍 Type errors found:"
+            cat type-check-results.txt
+            exit 1
+          fi
+        continue-on-error: false
+
+      - name: 🧪 Test Execution
+        id: test-check
+        if: inputs.skip-tests != true
+        run: |
+          echo "🧪 Running tests with coverage..."
+
+          # Determine test target
+          case "${{ inputs.target }}" in
+            all)
+              TEST_COMMAND="pnpm run ci:test"
+              ;;
+            packages)
+              TEST_COMMAND="pnpm run test:packages"
+              ;;
+            apps)
+              TEST_COMMAND="pnpm run test:apps"
+              ;;
+            services)
+              TEST_COMMAND="pnpm run test:services"
+              ;;
+            *)
+              # Check if it's a specific component
+              if [[ -d "packages/${{ inputs.target }}" ]] || [[ -d "apps/${{ inputs.target }}" ]] || [[ -d "services/${{ inputs.target }}" ]]; then
+                TEST_COMMAND="pnpm run test --filter @gbs/${{ inputs.target }}"
+              else
+                echo "⚠️ Unknown target: ${{ inputs.target }}"
+                TEST_COMMAND="pnpm run ci:test"
+              fi
+              ;;
+          esac
+
+          echo "🔍 Running: $TEST_COMMAND"
+
+          # Set up test environment
+          export NODE_ENV=test
+          export CI=true
+
+          # Run tests with coverage
+          if $TEST_COMMAND 2>&1 | tee test-results.txt; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "✅ Tests passed"
+            
+            # Extract coverage percentage (this would need to be adapted based on your test runner)
+            COVERAGE_PERCENT=$(grep -o "All files.*[0-9]\+\%" test-results.txt | grep -o "[0-9]\+\%" | head -1 | grep -o "[0-9]\+" || echo "0")
+            echo "coverage=$COVERAGE_PERCENT" >> $GITHUB_OUTPUT
+            echo "📊 Test coverage: $COVERAGE_PERCENT%"
+            
+            # Check coverage threshold
+            if [[ "$COVERAGE_PERCENT" -lt "${{ inputs.coverage-threshold }}" ]]; then
+              echo "❌ Coverage ($COVERAGE_PERCENT%) below threshold (${{ inputs.coverage-threshold }}%)"
+              echo "result=failure" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "❌ Tests failed"
+            exit 1
+          fi
+        env:
+          NODE_ENV: test
+          CI: true
+        continue-on-error: false
+
+      - name: 📊 Upload Coverage Reports
+        if: inputs.skip-tests != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ inputs.target }}
+          path: |
+            **/coverage
+            coverage
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: 📊 Upload Lint Results
+        if: inputs.skip-lint != true && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results-${{ inputs.target }}
+          path: |
+            lint-results.txt
+            **/.eslintcache
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: 📊 Upload Type Check Results
+        if: inputs.skip-type-check != true && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: type-check-results-${{ inputs.target }}
+          path: |
+            type-check-results.txt
+            **/*.tsbuildinfo
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: 📋 Quality Check Summary
+        if: always()
+        run: |
+          echo "🔍 Quality Check Summary for ${{ inputs.target }}"
+          echo "============================================="
+          echo ""
+          echo "📊 Results:"
+
+          # Lint results
+          if [[ "${{ inputs.skip-lint }}" == "true" ]]; then
+            echo "• Lint check: SKIPPED"
+          else
+            echo "• Lint check: ${{ steps.lint-check.outputs.result }}"
+          fi
+
+          # Type check results
+          if [[ "${{ inputs.skip-type-check }}" == "true" ]]; then
+            echo "• Type check: SKIPPED"
+          else
+            echo "• Type check: ${{ steps.type-check.outputs.result }}"
+          fi
+
+          # Test results
+          if [[ "${{ inputs.skip-tests }}" == "true" ]]; then
+            echo "• Tests: SKIPPED"
+          else
+            echo "• Tests: ${{ steps.test-check.outputs.result }}"
+            echo "• Coverage: ${{ steps.test-check.outputs.coverage }}%"
+          fi
+
+          echo ""
+
+          # Overall status
+          OVERALL_SUCCESS=true
+
+          if [[ "${{ inputs.skip-lint }}" != "true" && "${{ steps.lint-check.outputs.result }}" != "success" ]]; then
+            OVERALL_SUCCESS=false
+          fi
+
+          if [[ "${{ inputs.skip-type-check }}" != "true" && "${{ steps.type-check.outputs.result }}" != "success" ]]; then
+            OVERALL_SUCCESS=false
+          fi
+
+          if [[ "${{ inputs.skip-tests }}" != "true" && "${{ steps.test-check.outputs.result }}" != "success" ]]; then
+            OVERALL_SUCCESS=false
+          fi
+
+          if [[ "$OVERALL_SUCCESS" == "true" ]]; then
+            echo "🎉 Overall Status: PASS ✅"
+            echo "🚀 Quality checks completed successfully!"
+          else
+            echo "❌ Overall Status: FAIL"
+            echo "🛠️ Please address the failed checks before proceeding"
+            exit 1
+          fi
+
+# Environment variables
+env:
+  CI: true
+  NODE_ENV: test
+  FORCE_COLOR: 3

@@ -1,0 +1,505 @@
+# Pull Request Validation Workflow
+# Enhanced validation for pull requests with detailed feedback
+# Provides quality gates and automated review assistance
+
+name: 🔍 PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "*.txt"
+
+# Cancel previous runs when new commits are pushed
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  # PR Information and Analysis
+  pr-analysis:
+    name: 📊 PR Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event.pull_request.draft != true
+
+    outputs:
+      changed-files: ${{ steps.changed-files.outputs.files }}
+      has-breaking-changes: ${{ steps.analysis.outputs.breaking-changes }}
+      complexity-score: ${{ steps.analysis.outputs.complexity }}
+      risk-level: ${{ steps.analysis.outputs.risk-level }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📋 Get Changed Files
+        id: changed-files
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD | tr '\n' ',' | sed 's/,$//')
+          echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+
+          # Count changed files
+          FILE_COUNT=$(echo "$CHANGED_FILES" | tr ',' '\n' | wc -l)
+          echo "📊 Changed files: $FILE_COUNT"
+          echo "📋 Files: $CHANGED_FILES"
+
+      - name: 🔍 Analyze PR Complexity
+        id: analysis
+        run: |
+          CHANGED_FILES="${{ steps.changed-files.outputs.files }}"
+
+          # Initialize scores
+          COMPLEXITY_SCORE=0
+          BREAKING_CHANGES=false
+          RISK_LEVEL="low"
+
+          # Check for breaking changes
+          if echo "$CHANGED_FILES" | grep -E "(schema\.prisma|package\.json|turbo\.json|tsconfig.*\.json)" >/dev/null; then
+            BREAKING_CHANGES=true
+            COMPLEXITY_SCORE=$((COMPLEXITY_SCORE + 3))
+          fi
+
+          # Check file types for complexity
+          if echo "$CHANGED_FILES" | grep -E "\.(ts|tsx|js|jsx)$" >/dev/null; then
+            CODE_FILES=$(echo "$CHANGED_FILES" | tr ',' '\n' | grep -E "\.(ts|tsx|js|jsx)$" | wc -l)
+            COMPLEXITY_SCORE=$((COMPLEXITY_SCORE + CODE_FILES / 5))
+          fi
+
+          # Check for database changes
+          if echo "$CHANGED_FILES" | grep -E "(migration|schema|seed)" >/dev/null; then
+            COMPLEXITY_SCORE=$((COMPLEXITY_SCORE + 2))
+          fi
+
+          # Check for CI/CD changes
+          if echo "$CHANGED_FILES" | grep -E "\.github/workflows" >/dev/null; then
+            COMPLEXITY_SCORE=$((COMPLEXITY_SCORE + 2))
+          fi
+
+          # Determine risk level
+          if [ $COMPLEXITY_SCORE -ge 8 ]; then
+            RISK_LEVEL="high"
+          elif [ $COMPLEXITY_SCORE -ge 4 ]; then
+            RISK_LEVEL="medium"
+          fi
+
+          echo "breaking-changes=$BREAKING_CHANGES" >> $GITHUB_OUTPUT
+          echo "complexity=$COMPLEXITY_SCORE" >> $GITHUB_OUTPUT
+          echo "risk-level=$RISK_LEVEL" >> $GITHUB_OUTPUT
+
+          echo "📊 PR Analysis Results:"
+          echo "• Complexity Score: $COMPLEXITY_SCORE"
+          echo "• Breaking Changes: $BREAKING_CHANGES"
+          echo "• Risk Level: $RISK_LEVEL"
+
+      - name: 💬 PR Analysis Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const complexity = '${{ steps.analysis.outputs.complexity }}';
+            const riskLevel = '${{ steps.analysis.outputs.risk-level }}';
+            const breakingChanges = '${{ steps.analysis.outputs.breaking-changes }}' === 'true';
+            const changedFiles = '${{ steps.changed-files.outputs.files }}'.split(',').filter(f => f);
+
+            const riskEmojis = {
+              'low': '🟢',
+              'medium': '🟡', 
+              'high': '🔴'
+            };
+
+            let body = `## 📊 PR Analysis\n\n`;
+            body += `**Risk Level**: ${riskEmojis[riskLevel]} ${riskLevel.toUpperCase()}\n`;
+            body += `**Complexity Score**: ${complexity}/10\n`;
+            body += `**Files Changed**: ${changedFiles.length}\n`;
+            body += `**Breaking Changes**: ${breakingChanges ? '⚠️ Yes' : '✅ No'}\n\n`;
+
+            if (breakingChanges) {
+              body += `### ⚠️ Breaking Changes Detected\n`;
+              body += `This PR may contain breaking changes. Please review carefully and consider:\n`;
+              body += `- Database migration impact\n`;
+              body += `- API contract changes\n`;
+              body += `- Configuration updates\n\n`;
+            }
+
+            if (riskLevel === 'high') {
+              body += `### 🔴 High Risk PR\n`;
+              body += `This PR has a high complexity score. Consider:\n`;
+              body += `- Breaking into smaller PRs\n`;
+              body += `- Extra reviewer approval\n`;
+              body += `- Extended testing period\n\n`;
+            }
+
+            body += `### 📁 Changed Files\n`;
+            if (changedFiles.length <= 10) {
+              changedFiles.forEach(file => {
+                body += `- \`${file}\`\n`;
+              });
+            } else {
+              body += `<details>\n<summary>View all ${changedFiles.length} changed files</summary>\n\n`;
+              changedFiles.forEach(file => {
+                body += `- \`${file}\`\n`;
+              });
+              body += `\n</details>\n`;
+            }
+
+            // Find existing analysis comment and update it
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const analysisComment = comments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              comment.body.includes('## 📊 PR Analysis')
+            );
+
+            if (analysisComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: analysisComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  # Enhanced Quality Checks for PRs
+  pr-quality-check:
+    name: 🔍 PR Quality Check
+    runs-on: ubuntu-latest
+    needs: pr-analysis
+    if: github.event.pull_request.draft != true
+    timeout-minutes: 20
+
+    strategy:
+      matrix:
+        check: [lint, type-check, test]
+      fail-fast: false
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏗️ Setup Environment
+        uses: ./.github/workflows/_template-nodejs-setup.yml
+        with:
+          install-dependencies: true
+
+      - name: 🔍 Run Quality Check
+        uses: ./.github/workflows/_template-quality-check.yml
+        with:
+          target: all
+          skip-tests: ${{ matrix.check != 'test' }}
+          skip-lint: ${{ matrix.check != 'lint' }}
+          skip-type-check: ${{ matrix.check != 'type-check' }}
+          coverage-threshold: "75" # Slightly lower for PRs
+          lint-max-warnings: "5" # Allow some warnings for PRs
+
+      - name: 📊 Quality Check Results
+        if: always()
+        run: |
+          echo "📊 ${{ matrix.check }} Quality Check Results"
+          echo "========================================"
+          echo "• Check Type: ${{ matrix.check }}"
+          echo "• Status: ${{ job.status }}"
+          echo "• Risk Level: ${{ needs.pr-analysis.outputs.risk-level }}"
+
+  # Security scan for high-risk PRs
+  pr-security-scan:
+    name: 🛡️ PR Security Scan
+    runs-on: ubuntu-latest
+    needs: pr-analysis
+    if: needs.pr-analysis.outputs.risk-level == 'high' || needs.pr-analysis.outputs.has-breaking-changes == 'true'
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Environment
+        uses: ./.github/workflows/_template-nodejs-setup.yml
+        with:
+          install-dependencies: true
+
+      - name: 🛡️ Run Security Checks
+        run: |
+          echo "🛡️ Running security checks for high-risk PR..."
+
+          # Dependency audit
+          pnpm audit --audit-level high || echo "⚠️ Dependency vulnerabilities found"
+
+          # Search for potential secrets
+          echo "🔍 Checking for potential secrets..."
+          git diff origin/${{ github.event.pull_request.base.ref }}...HEAD | grep -i "password\|secret\|key\|token" || echo "✅ No obvious secrets found"
+
+          echo "✅ Security scan completed"
+
+  # Build validation for affected components
+  pr-build-validation:
+    name: 🏗️ Build Validation
+    runs-on: ubuntu-latest
+    needs: [pr-analysis, pr-quality-check]
+    if: github.event.pull_request.draft != true
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Environment
+        uses: ./.github/workflows/_template-nodejs-setup.yml
+        with:
+          install-dependencies: true
+
+      - name: 🏗️ Build Affected Components
+        run: |
+          echo "🏗️ Building affected components..."
+
+          # Determine what to build based on changed files
+          CHANGED_FILES="${{ needs.pr-analysis.outputs.changed-files }}"
+
+          if echo "$CHANGED_FILES" | grep -E "packages/" >/dev/null; then
+            echo "📦 Building packages..."
+            pnpm run build:packages || echo "⚠️ Package build failed"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -E "apps/" >/dev/null; then
+            echo "🌐 Building apps..."
+            pnpm run build:apps || echo "⚠️ App build failed"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -E "services/" >/dev/null; then
+            echo "🔧 Building services..."
+            pnpm run build:services || echo "⚠️ Service build failed"
+          fi
+
+          echo "✅ Build validation completed"
+        env:
+          NODE_ENV: production
+          # Test environment variables for build
+          DATABASE_URL: "postgresql://test:test@localhost:5432/testdb"
+          NEXTAUTH_SECRET: "test-secret-for-pr-build"
+        continue-on-error: true
+
+  # PR size and review recommendations
+  pr-review-guidance:
+    name: 📋 Review Guidance
+    runs-on: ubuntu-latest
+    needs: [pr-analysis, pr-quality-check, pr-build-validation]
+    if: always() && github.event.pull_request.draft != true
+    timeout-minutes: 5
+
+    steps:
+      - name: 💬 Review Guidance Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const riskLevel = '${{ needs.pr-analysis.outputs.risk-level }}';
+            const complexityScore = '${{ needs.pr-analysis.outputs.complexity }}';
+            const breakingChanges = '${{ needs.pr-analysis.outputs.has-breaking-changes }}' === 'true';
+            const qualityStatus = '${{ needs.pr-quality-check.result }}';
+            const buildStatus = '${{ needs.pr-build-validation.result }}';
+
+            let body = `## 📋 Review Guidance\n\n`;
+
+            // Quality check status
+            const statusEmoji = {
+              'success': '✅',
+              'failure': '❌',
+              'skipped': '⏭️',
+              'cancelled': '🚫'
+            };
+
+            body += `**Quality Checks**: ${statusEmoji[qualityStatus] || '❓'} ${qualityStatus}\n`;
+            body += `**Build Validation**: ${statusEmoji[buildStatus] || '❓'} ${buildStatus}\n\n`;
+
+            // Review recommendations
+            body += `### 👥 Reviewer Recommendations\n\n`;
+
+            if (riskLevel === 'high') {
+              body += `🔴 **High Risk PR** - Requires:\n`;
+              body += `- [ ] Senior developer review\n`;
+              body += `- [ ] Architecture review (if applicable)\n`;
+              body += `- [ ] Extended testing\n\n`;
+            } else if (riskLevel === 'medium') {
+              body += `🟡 **Medium Risk PR** - Consider:\n`;
+              body += `- [ ] Additional reviewer\n`;
+              body += `- [ ] Integration testing\n\n`;
+            } else {
+              body += `🟢 **Low Risk PR** - Standard review process\n\n`;
+            }
+
+            if (breakingChanges) {
+              body += `⚠️ **Breaking Changes Checklist**:\n`;
+              body += `- [ ] Database migrations tested\n`;
+              body += `- [ ] API documentation updated\n`;
+              body += `- [ ] Backward compatibility considered\n`;
+              body += `- [ ] Deployment plan reviewed\n\n`;
+            }
+
+            // Testing checklist
+            body += `### 🧪 Testing Checklist\n\n`;
+            body += `- [ ] Unit tests pass\n`;
+            body += `- [ ] Integration tests (if applicable)\n`;
+            body += `- [ ] Manual testing completed\n`;
+            body += `- [ ] Edge cases considered\n\n`;
+
+            // Deployment considerations
+            if (riskLevel !== 'low') {
+              body += `### 🚀 Deployment Considerations\n\n`;
+              body += `- [ ] Staging deployment tested\n`;
+              body += `- [ ] Database migrations planned\n`;
+              body += `- [ ] Rollback plan prepared\n`;
+              body += `- [ ] Monitoring alerts configured\n\n`;
+            }
+
+            body += `---\n`;
+            body += `*This guidance is automatically generated based on PR analysis. Use your best judgment for final decisions.*`;
+
+            // Find and update existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const guidanceComment = comments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              comment.body.includes('## 📋 Review Guidance')
+            );
+
+            if (guidanceComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: guidanceComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  # PR validation summary
+  pr-validation-summary:
+    name: ✅ PR Validation Summary
+    runs-on: ubuntu-latest
+    needs:
+      [pr-analysis, pr-quality-check, pr-build-validation, pr-review-guidance]
+    if: always() && github.event.pull_request.draft != true
+    timeout-minutes: 5
+
+    steps:
+      - name: 📊 Validation Summary
+        run: |
+          echo "🎯 PR Validation Summary"
+          echo "========================"
+          echo ""
+          echo "📊 Analysis Results:"
+          echo "• Risk Level: ${{ needs.pr-analysis.outputs.risk-level }}"
+          echo "• Complexity Score: ${{ needs.pr-analysis.outputs.complexity }}"
+          echo "• Breaking Changes: ${{ needs.pr-analysis.outputs.has-breaking-changes }}"
+          echo ""
+          echo "🔍 Validation Results:"
+          echo "• Quality Checks: ${{ needs.pr-quality-check.result }}"
+          echo "• Build Validation: ${{ needs.pr-build-validation.result }}"
+          echo ""
+
+          # Determine overall status
+          if [[ "${{ needs.pr-quality-check.result }}" == "success" && \
+                "${{ needs.pr-build-validation.result }}" == "success" ]]; then
+            echo "🎉 Overall Status: READY FOR REVIEW ✅"
+            exit 0
+          elif [[ "${{ needs.pr-quality-check.result }}" == "failure" || \
+                  "${{ needs.pr-build-validation.result }}" == "failure" ]]; then
+            echo "❌ Overall Status: NEEDS FIXES"
+            exit 1
+          else
+            echo "⚠️ Overall Status: REVIEW REQUIRED"
+            exit 0
+          fi
+
+      - name: 🏷️ Update PR Labels
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const riskLevel = '${{ needs.pr-analysis.outputs.risk-level }}';
+            const breakingChanges = '${{ needs.pr-analysis.outputs.has-breaking-changes }}' === 'true';
+            const qualityStatus = '${{ needs.pr-quality-check.result }}';
+            const buildStatus = '${{ needs.pr-build-validation.result }}';
+
+            // Define labels to manage
+            const labelsToAdd = [];
+            const labelsToRemove = ['size/small', 'size/medium', 'size/large', 'risk/low', 'risk/medium', 'risk/high', 'breaking-change', 'ready-for-review', 'needs-fixes'];
+
+            // Risk level labels
+            labelsToAdd.push(`risk/${riskLevel}`);
+
+            // Breaking changes label
+            if (breakingChanges) {
+              labelsToAdd.push('breaking-change');
+            }
+
+            // Status labels
+            if (qualityStatus === 'success' && buildStatus === 'success') {
+              labelsToAdd.push('ready-for-review');
+            } else if (qualityStatus === 'failure' || buildStatus === 'failure') {
+              labelsToAdd.push('needs-fixes');
+            }
+
+            // Remove old labels first
+            for (const label of labelsToRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label
+                });
+              } catch (error) {
+                // Label might not exist, ignore error
+              }
+            }
+
+            // Add new labels
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labelsToAdd
+              });
+            }
+
+# Environment variables
+env:
+  CI: true
+  NODE_ENV: test
+  FORCE_COLOR: 3

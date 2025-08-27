@@ -1,0 +1,453 @@
+# Main CI Pipeline for Final Golf SaaS
+# Triggers on PRs to main, develop, and pushes to main
+# Provides comprehensive quality checks with caching optimization
+
+name: 🔍 Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".env.example"
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".env.example"
+
+# Cancel in-progress workflows when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Set default permissions for GITHUB_TOKEN
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  # Job 1: Validate dependencies and workspace integrity
+  validate-workspace:
+    name: 🔧 Validate Workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for better caching and analysis
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 🧹 Verify Cache Cleanliness
+        run: |
+          echo "🔍 Checking for cache corruption..."
+          pnpm config get cache-dir
+          du -sh ~/.pnpm-store || echo "PNPM store not found"
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "📦 Installing dependencies with frozen lockfile..."
+          pnpm install --frozen-lockfile --prefer-offline
+        env:
+          # Optimize installation performance
+          NODE_ENV: development
+          CI: true
+
+      - name: ✅ Validate Workspace Integrity
+        run: |
+          echo "🔍 Validating workspace configuration..."
+          pnpm run validate
+
+          echo "🔍 Checking dependency consistency..."
+          pnpm run check:deps
+
+          echo "📊 Workspace health check complete"
+
+  # Job 2: Code quality and linting
+  lint:
+    name: 🧹 Lint & Format Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate-workspace
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+        env:
+          NODE_ENV: development
+          CI: true
+
+      - name: 🧹 Run ESLint
+        run: |
+          echo "🔍 Running ESLint with Turbo caching..."
+          pnpm run ci:lint
+        continue-on-error: false
+
+      - name: 🎨 Check Prettier Formatting
+        run: |
+          echo "🎨 Checking code formatting..."
+          pnpm run format:check
+        continue-on-error: false
+
+      - name: 📋 Lint Summary
+        if: always()
+        run: |
+          echo "✅ Code quality checks completed"
+          echo "📊 ESLint: $([ $? -eq 0 ] && echo 'PASSED' || echo 'FAILED')"
+
+  # Job 3: Type checking
+  type-check:
+    name: 🔍 Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate-workspace
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+        env:
+          NODE_ENV: development
+          CI: true
+
+      - name: 🏗️ Generate Prisma Client
+        run: |
+          echo "🗄️ Generating Prisma client..."
+          pnpm run db:generate
+        continue-on-error: true # Database package might not exist yet
+
+      - name: 🔍 Run Type Checking
+        run: |
+          echo "🔍 Running TypeScript type checking with Turbo..."
+          pnpm run ci:type-check
+        env:
+          NODE_ENV: development
+
+      - name: 📊 Upload TypeScript Build Info
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: typescript-build-info
+          path: "**/*.tsbuildinfo"
+          retention-days: 1
+
+  # Job 4: Unit and integration tests
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate-workspace
+
+    # Test matrix for different scenarios
+    strategy:
+      matrix:
+        test-type: [unit, integration]
+      fail-fast: false
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+        env:
+          NODE_ENV: test
+          CI: true
+
+      - name: 🏗️ Generate Prisma Client
+        run: pnpm run db:generate
+        continue-on-error: true
+
+      - name: 🧪 Run Unit Tests
+        if: matrix.test-type == 'unit'
+        run: |
+          echo "🧪 Running unit tests with coverage..."
+          pnpm run ci:test
+        env:
+          NODE_ENV: test
+          CI: true
+
+      - name: 🔗 Run Integration Tests
+        if: matrix.test-type == 'integration'
+        run: |
+          echo "🔗 Running integration tests..."
+          pnpm run test:integration
+        env:
+          NODE_ENV: test
+          CI: true
+        continue-on-error: true # Integration tests might not exist yet
+
+      - name: 📊 Upload Test Coverage
+        if: matrix.test-type == 'unit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: "**/coverage"
+          retention-days: 7
+
+      - name: 📋 Test Results Summary
+        if: always()
+        run: |
+          echo "✅ ${{ matrix.test-type }} tests completed"
+          echo "📊 Check uploaded artifacts for detailed results"
+
+  # Job 5: Build validation
+  build:
+    name: 🏗️ Build Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [lint, type-check]
+
+    strategy:
+      matrix:
+        target: [packages, apps, services]
+      fail-fast: false
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+        env:
+          NODE_ENV: production
+          CI: true
+
+      - name: 🏗️ Generate Prisma Client
+        run: pnpm run db:generate
+        continue-on-error: true
+
+      - name: 🏗️ Build Target
+        run: |
+          echo "🏗️ Building ${{ matrix.target }}..."
+          case "${{ matrix.target }}" in
+            packages)
+              pnpm run build:packages
+              ;;
+            apps)
+              pnpm run build:apps
+              ;;
+            services)
+              pnpm run build:services
+              ;;
+          esac
+        env:
+          NODE_ENV: production
+          # Add production-like environment variables
+          DATABASE_URL: "postgresql://test:test@localhost:5432/testdb"
+          NEXTAUTH_URL: "http://localhost:3000"
+          NEXTAUTH_SECRET: "test-secret-for-ci-build"
+          REDIS_URL: "redis://localhost:6379"
+
+      - name: 📊 Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.target }}
+          path: |
+            **/dist
+            **/.next
+            !**/.next/cache
+            **/build
+            **/out
+          retention-days: 3
+
+  # Job 6: Security and dependency audit
+  security-audit:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: validate-workspace
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.17.0"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+
+      - name: 🔒 Run Security Audit
+        run: |
+          echo "🔒 Running PNPM security audit..."
+          pnpm audit --audit-level moderate || true
+
+          echo "🔍 Checking for known vulnerabilities..."
+          pnpm audit --format json --audit-level high > audit-results.json || true
+
+          echo "📊 Security audit completed"
+
+      - name: 📊 Upload Audit Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-audit
+          path: audit-results.json
+          retention-days: 7
+
+  # Job 7: CI Summary and notification
+  ci-complete:
+    name: ✅ CI Summary
+    runs-on: ubuntu-latest
+    needs: [validate-workspace, lint, type-check, test, build, security-audit]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: 📊 CI Results Summary
+        run: |
+          echo "🎯 Final Golf SaaS CI Pipeline Summary"
+          echo "========================================"
+          echo ""
+          echo "📋 Job Status Overview:"
+          echo "• Workspace Validation: ${{ needs.validate-workspace.result }}"
+          echo "• Linting & Formatting: ${{ needs.lint.result }}"
+          echo "• Type Checking: ${{ needs.type-check.result }}"
+          echo "• Testing: ${{ needs.test.result }}"
+          echo "• Build Validation: ${{ needs.build.result }}"
+          echo "• Security Audit: ${{ needs.security-audit.result }}"
+          echo ""
+
+          # Determine overall status
+          if [[ "${{ needs.validate-workspace.result }}" == "success" && \
+                "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.type-check.result }}" == "success" && \
+                ("${{ needs.test.result }}" == "success" || "${{ needs.test.result }}" == "skipped") && \
+                "${{ needs.build.result }}" == "success" && \
+                "${{ needs.security-audit.result }}" == "success" ]]; then
+            echo "🎉 Overall Status: SUCCESS ✅"
+            echo "🚀 Ready for deployment pipeline"
+          else
+            echo "❌ Overall Status: FAILURE"
+            echo "🛠️ Please review failed jobs before proceeding"
+            exit 1
+          fi
+
+      - name: 📝 Update PR Status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { context, github } = require('@actions/github');
+            const success = '${{ needs.validate-workspace.result }}' === 'success' && 
+                           '${{ needs.lint.result }}' === 'success' && 
+                           '${{ needs.type-check.result }}' === 'success' && 
+                           ('${{ needs.test.result }}' === 'success' || '${{ needs.test.result }}' === 'skipped') &&
+                           '${{ needs.build.result }}' === 'success' && 
+                           '${{ needs.security-audit.result }}' === 'success';
+
+            const body = success ? 
+              '✅ **CI Pipeline Passed** - All quality checks completed successfully!' :
+              '❌ **CI Pipeline Failed** - Please review the failed jobs and address issues.';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+# Environment variables available to all jobs
+env:
+  CI: true
+  NODE_ENV: development
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+  FORCE_COLOR: 3
+  HUSKY: 0 # Disable Husky in CI

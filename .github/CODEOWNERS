@@ -1,0 +1,227 @@
+# Code Owners for Final Golf SaaS
+# This file defines who is responsible for reviewing changes to specific parts of the codebase
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owners - require review for all changes unless more specific rule applies
+* @team-leads @senior-developers
+
+# =============================================================================
+# Core Infrastructure & Configuration
+# =============================================================================
+
+# Root configuration files
+package.json @devops-team @tech-leads
+pnpm-workspace.yaml @devops-team
+turbo.json @devops-team
+tsconfig*.json @devops-team @frontend-team @backend-team
+
+# Environment and Docker configuration
+.env* @devops-team @security-team
+docker-compose.yml @devops-team @infrastructure-team
+docker/ @devops-team @infrastructure-team
+Dockerfile* @devops-team
+
+# CI/CD and GitHub configuration
+.github/ @devops-team @tech-leads
+scripts/ @devops-team
+
+# Git hooks and linting
+.husky/ @devops-team
+.eslintrc* @frontend-team @backend-team
+.prettierrc* @frontend-team @backend-team
+commitlint.config.js @devops-team
+
+# =============================================================================
+# Documentation
+# =============================================================================
+docs/ @tech-writing-team @tech-leads
+*.md @tech-writing-team
+README.md @tech-leads @tech-writing-team
+
+# =============================================================================
+# Database & Core Packages
+# =============================================================================
+
+# Database package - critical for all services
+packages/database/ @backend-team @database-team @tech-leads
+packages/database/schema.prisma @backend-team @database-team @tech-leads
+packages/database/migrations/ @backend-team @database-team
+
+# Shared schemas - affects all teams
+packages/schemas/ @backend-team @frontend-team @api-team
+
+# Shared types - affects all teams  
+packages/types/ @backend-team @frontend-team @api-team
+
+# Core shared utilities
+packages/shared/ @backend-team @frontend-team
+packages/config/ @devops-team @backend-team
+
+# Authentication & authorization - security critical
+packages/auth/ @backend-team @security-team @tech-leads
+
+# Payment processing - high risk
+packages/payments/ @backend-team @security-team @finance-team @tech-leads
+
+# UI components
+packages/ui/ @frontend-team @design-team
+
+# Notifications and communication
+packages/notifications/ @backend-team @frontend-team
+packages/i18n/ @frontend-team @localization-team
+
+# =============================================================================
+# Applications
+# =============================================================================
+
+# Customer-facing web application
+apps/web/ @frontend-team @ux-team @customer-success-team
+
+# API Gateway - critical backend service
+apps/api/ @backend-team @api-team @security-team
+
+# On-site PWA for golf course operations
+apps/onsite-pwa/ @frontend-team @pos-team @course-operations-team
+
+# Course administration dashboard  
+apps/course-admin/ @frontend-team @course-team @admin-team
+
+# Platform administration - high privilege access
+apps/platform-admin/ @frontend-team @platform-team @security-team @tech-leads
+
+# =============================================================================
+# Services (Backend)
+# =============================================================================
+
+# Worker service - handles background jobs
+services/worker/ @backend-team @infrastructure-team
+
+# Webhook service - handles external integrations
+services/webhooks/ @backend-team @api-team @security-team
+
+# Scheduler service - handles cron jobs
+services/scheduler/ @backend-team @infrastructure-team
+
+# Real-time service - WebSocket server
+services/realtime/ @backend-team @frontend-team
+
+# =============================================================================
+# Business Domain-Specific Files
+# =============================================================================
+
+# Booking & tee sheet management
+**/booking* @backend-team @course-team @golf-operations-team
+**/teesheet* @backend-team @course-team @golf-operations-team
+
+# Point of sale system
+**/pos* @backend-team @pos-team @finance-team
+
+# Payment processing
+**/payment* @backend-team @security-team @finance-team
+**/stripe* @backend-team @security-team @finance-team
+**/paymongo* @backend-team @security-team @finance-team
+
+# User management and authentication
+**/auth* @backend-team @security-team
+**/user* @backend-team @security-team
+
+# Course management
+**/course* @backend-team @course-team
+
+# Reporting and analytics
+**/report* @backend-team @analytics-team
+**/analytics* @backend-team @analytics-team @data-team
+
+# Inventory management
+**/inventory* @backend-team @pos-team @course-team
+
+# Coaching marketplace
+**/coach* @backend-team @marketplace-team
+**/lesson* @backend-team @marketplace-team
+
+# Classified ads
+**/classified* @backend-team @marketplace-team @content-moderation-team
+
+# =============================================================================
+# Security & Compliance
+# =============================================================================
+
+# Security-sensitive configuration
+**/*security* @security-team @tech-leads
+**/*auth* @security-team @backend-team
+**/*jwt* @security-team @backend-team
+**/*webhook* @security-team @backend-team
+
+# Environment templates (contain security configuration examples)
+**/*.env.example @security-team @devops-team
+
+# =============================================================================
+# Performance & Monitoring
+# =============================================================================
+
+# Performance configuration
+**/*performance* @performance-team @backend-team
+**/*monitoring* @infrastructure-team @devops-team
+**/*sentry* @infrastructure-team @devops-team
+
+# =============================================================================
+# Testing
+# =============================================================================
+
+# Test configuration and shared utilities
+**/*.test.* @quality-assurance-team @backend-team @frontend-team
+**/*.spec.* @quality-assurance-team @backend-team @frontend-team
+**/test* @quality-assurance-team
+**/__tests__/ @quality-assurance-team
+**/e2e/ @quality-assurance-team @frontend-team
+playwright.config.* @quality-assurance-team @frontend-team
+
+# =============================================================================
+# Special Files Requiring Extra Care
+# =============================================================================
+
+# License and legal
+LICENSE* @legal-team @tech-leads
+COPYRIGHT* @legal-team @tech-leads
+
+# Dependency management (security implications)
+pnpm-lock.yaml @devops-team @security-team
+
+# Build configuration (affects all environments)
+next.config.* @frontend-team @devops-team
+vite.config.* @frontend-team @devops-team
+webpack.config.* @frontend-team @devops-team
+
+# Database migrations (irreversible changes)
+**/migrations/ @database-team @backend-team @tech-leads
+
+# =============================================================================
+# Team Definitions for Reference
+# =============================================================================
+# 
+# @tech-leads - Overall technical leadership
+# @senior-developers - Senior developers across all teams  
+# @devops-team - Infrastructure, deployment, CI/CD
+# @security-team - Security, compliance, vulnerability management
+# @backend-team - Backend development, APIs, services
+# @frontend-team - Frontend development, UI/UX implementation
+# @database-team - Database design, optimization, migrations
+# @api-team - API design, integration, webhook management
+# @pos-team - Point of sale system specialists
+# @course-team - Golf course operations and management
+# @platform-team - Platform administration and multi-tenancy
+# @quality-assurance-team - Testing, quality assurance
+# @infrastructure-team - Cloud infrastructure, monitoring
+# @performance-team - Performance optimization, load testing
+# @analytics-team - Analytics, reporting, business intelligence
+# @data-team - Data engineering, ETL, data science
+# @ux-team - User experience design and research
+# @design-team - Visual design, design systems
+# @golf-operations-team - Golf industry domain experts
+# @marketplace-team - Marketplace features (coaching, classifieds)
+# @customer-success-team - Customer success and support
+# @finance-team - Financial operations and reporting
+# @legal-team - Legal compliance and contracts
+# @content-moderation-team - Content moderation for marketplace
+# @localization-team - Internationalization and localization
+# @tech-writing-team - Technical documentation and content

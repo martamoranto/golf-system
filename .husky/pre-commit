@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Final Golf SaaS - Pre-commit hook
+# Runs linting, formatting, and type checking before commits
+
+echo "🔍 Running pre-commit checks..."
+
+# Run lint-staged for staged files
+pnpm lint-staged
+
+echo "✅ Pre-commit checks passed!"

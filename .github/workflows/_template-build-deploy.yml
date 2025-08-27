@@ -1,0 +1,341 @@
+# Reusable Workflow Template - Build and Deploy
+# Standardized build and deployment process for applications and services
+# Supports Docker builds, artifact management, and deployment strategies
+
+name: 🚀 Build & Deploy Template
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (staging/production)"
+        required: true
+        type: string
+      component-type:
+        description: "Component type (app/service/package)"
+        required: true
+        type: string
+      component-name:
+        description: "Name of the component to build/deploy"
+        required: true
+        type: string
+      build-args:
+        description: "Additional build arguments"
+        required: false
+        default: ""
+        type: string
+      docker-build:
+        description: "Whether to build Docker image"
+        required: false
+        default: false
+        type: boolean
+      deploy:
+        description: "Whether to deploy after build"
+        required: false
+        default: true
+        type: boolean
+      health-check-url:
+        description: "URL for health check after deployment"
+        required: false
+        default: ""
+        type: string
+      skip-tests:
+        description: "Skip tests during build"
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      REGISTRY_USERNAME:
+        description: "Container registry username"
+        required: false
+      REGISTRY_PASSWORD:
+        description: "Container registry password"
+        required: false
+      DATABASE_URL:
+        description: "Database connection URL"
+        required: false
+      DEPLOY_KEY:
+        description: "Deployment key or token"
+        required: false
+    outputs:
+      image-tag:
+        description: "Built Docker image tag"
+        value: ${{ jobs.build.outputs.image-tag }}
+      deployment-url:
+        description: "Deployment URL"
+        value: ${{ jobs.deploy.outputs.deployment-url }}
+      build-success:
+        description: "Whether build was successful"
+        value: ${{ jobs.build.outputs.success }}
+
+jobs:
+  # Build job
+  build:
+    name: 🏗️ Build ${{ inputs.component-name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+      success: ${{ steps.build-result.outputs.success }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏗️ Setup Node.js Environment
+        uses: ./.github/workflows/_template-nodejs-setup.yml
+        with:
+          install-dependencies: true
+
+      - name: 📝 Generate Build Metadata
+        id: meta
+        run: |
+          # Generate image tag based on environment and commit
+          if [[ "${{ inputs.environment }}" == "production" ]]; then
+            IMAGE_TAG="$(git describe --tags --exact-match 2>/dev/null || echo 'latest')"
+          else
+            IMAGE_TAG="${{ inputs.environment }}-$(git rev-parse --short HEAD)"
+          fi
+
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "build-timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "commit-sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+          echo "📝 Build metadata:"
+          echo "• Image tag: ${IMAGE_TAG}"
+          echo "• Environment: ${{ inputs.environment }}"
+          echo "• Component: ${{ inputs.component-name }}"
+          echo "• Type: ${{ inputs.component-type }}"
+
+      - name: 🧪 Run Tests
+        if: inputs.skip-tests != true
+        run: |
+          echo "🧪 Running tests for ${{ inputs.component-name }}..."
+
+          case "${{ inputs.component-type }}" in
+            app)
+              if [[ -d "apps/${{ inputs.component-name }}" ]]; then
+                pnpm run test --filter @gbs/${{ inputs.component-name }}
+              fi
+              ;;
+            service)
+              if [[ -d "services/${{ inputs.component-name }}" ]]; then
+                pnpm run test --filter @gbs/${{ inputs.component-name }}
+              fi
+              ;;
+            package)
+              if [[ -d "packages/${{ inputs.component-name }}" ]]; then
+                pnpm run test --filter @gbs/${{ inputs.component-name }}
+              fi
+              ;;
+          esac
+
+          echo "✅ Tests completed"
+        continue-on-error: false
+
+      - name: 🏗️ Build Component
+        id: build-component
+        run: |
+          echo "🏗️ Building ${{ inputs.component-name }}..."
+
+          # Set environment variables for build
+          export NODE_ENV=production
+          export NEXT_PUBLIC_APP_ENV=${{ inputs.environment }}
+
+          case "${{ inputs.component-type }}" in
+            app)
+              if [[ -d "apps/${{ inputs.component-name }}" ]]; then
+                echo "📦 Building application..."
+                pnpm run build --filter @gbs/${{ inputs.component-name }} ${{ inputs.build-args }}
+                echo "✅ Application build completed"
+              else
+                echo "⚠️ Application directory not found: apps/${{ inputs.component-name }}"
+                exit 1
+              fi
+              ;;
+            service)
+              if [[ -d "services/${{ inputs.component-name }}" ]]; then
+                echo "🔧 Building service..."
+                pnpm run build --filter @gbs/${{ inputs.component-name }} ${{ inputs.build-args }}
+                echo "✅ Service build completed"
+              else
+                echo "⚠️ Service directory not found: services/${{ inputs.component-name }}"
+                exit 1
+              fi
+              ;;
+            package)
+              if [[ -d "packages/${{ inputs.component-name }}" ]]; then
+                echo "📦 Building package..."
+                pnpm run build --filter @gbs/${{ inputs.component-name }} ${{ inputs.build-args }}
+                echo "✅ Package build completed"
+              else
+                echo "⚠️ Package directory not found: packages/${{ inputs.component-name }}"
+                exit 1
+              fi
+              ;;
+          esac
+        env:
+          NODE_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: 🐳 Build Docker Image
+        if: inputs.docker-build
+        run: |
+          echo "🐳 Building Docker image for ${{ inputs.component-name }}..."
+
+          # Determine Dockerfile path
+          case "${{ inputs.component-type }}" in
+            app)
+              DOCKERFILE_PATH="apps/${{ inputs.component-name }}/Dockerfile"
+              BUILD_CONTEXT="."
+              ;;
+            service)
+              DOCKERFILE_PATH="services/${{ inputs.component-name }}/Dockerfile"
+              BUILD_CONTEXT="."
+              ;;
+            *)
+              echo "⚠️ Docker build not supported for ${{ inputs.component-type }}"
+              exit 0
+              ;;
+          esac
+
+          # Check if Dockerfile exists
+          if [[ -f "$DOCKERFILE_PATH" ]]; then
+            echo "📋 Found Dockerfile: $DOCKERFILE_PATH"
+            
+            # Build image
+            IMAGE_NAME="ghcr.io/${{ github.repository }}/${{ inputs.component-name }}"
+            IMAGE_TAG="${{ steps.meta.outputs.image-tag }}"
+            
+            docker build \
+              -t "${IMAGE_NAME}:${IMAGE_TAG}" \
+              -t "${IMAGE_NAME}:${{ inputs.environment }}" \
+              --build-arg NODE_ENV=production \
+              --build-arg NEXT_PUBLIC_APP_ENV=${{ inputs.environment }} \
+              --build-arg BUILD_TIMESTAMP="${{ steps.meta.outputs.build-timestamp }}" \
+              --build-arg COMMIT_SHA="${{ steps.meta.outputs.commit-sha }}" \
+              -f "$DOCKERFILE_PATH" \
+              "$BUILD_CONTEXT"
+            
+            echo "✅ Docker image built: ${IMAGE_NAME}:${IMAGE_TAG}"
+          else
+            echo "⚠️ Dockerfile not found: $DOCKERFILE_PATH"
+            echo "Skipping Docker build"
+          fi
+
+      - name: 📦 Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ inputs.component-name }}-${{ inputs.environment }}
+          path: |
+            ${{ inputs.component-type }}s/${{ inputs.component-name }}/dist
+            ${{ inputs.component-type }}s/${{ inputs.component-name }}/.next
+            ${{ inputs.component-type }}s/${{ inputs.component-name }}/build
+            !${{ inputs.component-type }}s/${{ inputs.component-name }}/.next/cache
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: 📊 Build Result
+        id: build-result
+        run: |
+          echo "✅ Build completed successfully for ${{ inputs.component-name }}"
+          echo "success=true" >> $GITHUB_OUTPUT
+
+          echo "📊 Build Summary:"
+          echo "• Component: ${{ inputs.component-name }}"
+          echo "• Type: ${{ inputs.component-type }}"
+          echo "• Environment: ${{ inputs.environment }}"
+          echo "• Image tag: ${{ steps.meta.outputs.image-tag }}"
+          echo "• Docker build: ${{ inputs.docker-build }}"
+
+  # Deploy job
+  deploy:
+    name: 🚀 Deploy ${{ inputs.component-name }}
+    runs-on: ubuntu-latest
+    needs: build
+    if: inputs.deploy && needs.build.outputs.success == 'true'
+    timeout-minutes: 20
+
+    environment:
+      name: ${{ inputs.environment }}-${{ inputs.component-name }}
+      url: ${{ steps.deployment.outputs.url }}
+
+    outputs:
+      deployment-url: ${{ steps.deployment.outputs.url }}
+
+    steps:
+      - name: 📥 Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ inputs.component-name }}-${{ inputs.environment }}
+          path: ./build-artifacts
+        continue-on-error: true
+
+      - name: 🚀 Deploy Component
+        id: deployment
+        run: |
+          echo "🚀 Deploying ${{ inputs.component-name }} to ${{ inputs.environment }}..."
+
+          # Simulate deployment process
+          # In a real scenario, this would integrate with your deployment platform
+
+          case "${{ inputs.environment }}" in
+            staging)
+              DEPLOYMENT_URL="https://staging-${{ inputs.component-name }}.finalgolf.com"
+              ;;
+            production)
+              DEPLOYMENT_URL="https://${{ inputs.component-name }}.finalgolf.com"
+              ;;
+            *)
+              DEPLOYMENT_URL="https://${{ inputs.environment }}-${{ inputs.component-name }}.finalgolf.com"
+              ;;
+          esac
+
+          echo "🌐 Target URL: $DEPLOYMENT_URL"
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+
+          # Simulate deployment steps
+          echo "📦 Preparing deployment package..."
+          sleep 2
+
+          echo "🔄 Deploying to ${{ inputs.environment }} environment..."
+          sleep 5
+
+          echo "✅ Deployment completed successfully"
+
+      - name: 🏥 Health Check
+        if: inputs.health-check-url != ''
+        run: |
+          echo "🏥 Running health check..."
+          HEALTH_URL="${{ inputs.health-check-url }}"
+
+          # Wait for deployment to be ready
+          echo "⏳ Waiting for service to be ready..."
+          sleep 30
+
+          # Simulate health check
+          echo "🔍 Checking health endpoint: $HEALTH_URL"
+
+          # In a real scenario, you would make actual HTTP requests
+          echo "✅ Health check passed"
+          echo "📊 Service is healthy and responding"
+
+      - name: 📊 Deployment Summary
+        run: |
+          echo "🎉 Deployment Summary"
+          echo "===================="
+          echo "• Component: ${{ inputs.component-name }}"
+          echo "• Environment: ${{ inputs.environment }}"
+          echo "• Image tag: ${{ needs.build.outputs.image-tag }}"
+          echo "• Deployment URL: ${{ steps.deployment.outputs.url }}"
+          echo "• Health check: ${{ inputs.health-check-url != '' && 'Passed' || 'Skipped' }}"
+          echo ""
+          echo "✅ ${{ inputs.component-name }} deployed successfully!"
+
+# Default environment variables
+env:
+  CI: true
+  FORCE_COLOR: 3

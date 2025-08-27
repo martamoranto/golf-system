@@ -1,0 +1,232 @@
+# Cache Management and Cleanup Workflow
+# Manages GitHub Actions cache to prevent storage limits and improve performance
+# Runs on schedule and can be triggered manually
+
+name: 🧹 Cache Cleanup
+
+on:
+  schedule:
+    # Run cache cleanup every Sunday at 2 AM UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      cleanup_type:
+        description: "Type of cleanup to perform"
+        required: false
+        default: "standard"
+        type: choice
+        options:
+          - "standard"
+          - "aggressive"
+          - "full"
+      max_cache_age_days:
+        description: "Maximum age of caches to keep (in days)"
+        required: false
+        default: "7"
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup-caches:
+    name: 🧹 Cleanup Build Caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🧹 Clean Old Caches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const maxAge = parseInt('${{ github.event.inputs.max_cache_age_days || '7' }}');
+            const cleanupType = '${{ github.event.inputs.cleanup_type || 'standard' }}';
+            const cutoffDate = new Date(Date.now() - (maxAge * 24 * 60 * 60 * 1000));
+
+            console.log(`🧹 Starting ${cleanupType} cache cleanup`);
+            console.log(`📅 Cutoff date: ${cutoffDate.toISOString()}`);
+
+            // Get all caches
+            const caches = await github.rest.actions.getActionsCaches({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            let deletedCount = 0;
+            let totalSize = 0;
+
+            for (const cache of caches.data.actions_caches) {
+              const cacheDate = new Date(cache.created_at);
+              const shouldDelete = cacheDate < cutoffDate;
+              
+              // Apply cleanup type rules
+              let deleteThisCache = false;
+              
+              switch (cleanupType) {
+                case 'standard':
+                  // Delete old caches and caches from closed PRs
+                  deleteThisCache = shouldDelete || cache.ref.includes('refs/pull/');
+                  break;
+                  
+                case 'aggressive':
+                  // Delete old caches, PR caches, and non-main branch caches
+                  deleteThisCache = shouldDelete || 
+                    cache.ref.includes('refs/pull/') ||
+                    (!cache.ref.includes('refs/heads/main') && !cache.ref.includes('refs/heads/develop'));
+                  break;
+                  
+                case 'full':
+                  // Delete all caches except very recent main/develop
+                  const veryRecentDate = new Date(Date.now() - (1 * 24 * 60 * 60 * 1000)); // 1 day
+                  deleteThisCache = cacheDate < veryRecentDate || 
+                    (!cache.ref.includes('refs/heads/main') && !cache.ref.includes('refs/heads/develop'));
+                  break;
+              }
+              
+              if (deleteThisCache) {
+                try {
+                  await github.rest.actions.deleteActionsCacheById({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    cache_id: cache.id
+                  });
+                  
+                  deletedCount++;
+                  totalSize += cache.size_in_bytes;
+                  console.log(`🗑️ Deleted cache: ${cache.key} (${(cache.size_in_bytes / 1024 / 1024).toFixed(2)} MB)`);
+                } catch (error) {
+                  console.log(`❌ Failed to delete cache ${cache.key}: ${error.message}`);
+                }
+              }
+            }
+
+            console.log(`\n📊 Cleanup Summary:`);
+            console.log(`• Deleted caches: ${deletedCount}`);
+            console.log(`• Total size freed: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`• Cleanup type: ${cleanupType}`);
+
+      - name: 📊 Cache Status Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get remaining caches
+            const caches = await github.rest.actions.getActionsCaches({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            let totalSize = 0;
+            const cachesByType = {};
+
+            for (const cache of caches.data.actions_caches) {
+              totalSize += cache.size_in_bytes;
+              
+              // Categorize cache by key pattern
+              if (cache.key.includes('pnpm')) {
+                cachesByType['pnpm'] = (cachesByType['pnpm'] || 0) + 1;
+              } else if (cache.key.includes('node')) {
+                cachesByType['node'] = (cachesByType['node'] || 0) + 1;
+              } else if (cache.key.includes('turbo')) {
+                cachesByType['turbo'] = (cachesByType['turbo'] || 0) + 1;
+              } else {
+                cachesByType['other'] = (cachesByType['other'] || 0) + 1;
+              }
+            }
+
+            console.log(`\n📊 Current Cache Status:`);
+            console.log(`• Total caches: ${caches.data.actions_caches.length}`);
+            console.log(`• Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`• Cache distribution:`);
+            for (const [type, count] of Object.entries(cachesByType)) {
+              console.log(`  - ${type}: ${count} caches`);
+            }
+
+  # Cleanup workflow runs to prevent storage bloat
+  cleanup-workflow-runs:
+    name: 🧹 Cleanup Workflow Runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🧹 Clean Old Workflow Runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const maxAge = parseInt('${{ github.event.inputs.max_cache_age_days || '7' }}');
+            const cutoffDate = new Date(Date.now() - (maxAge * 24 * 60 * 60 * 1000));
+
+            console.log(`🧹 Cleaning workflow runs older than ${maxAge} days`);
+            console.log(`📅 Cutoff date: ${cutoffDate.toISOString()}`);
+
+            // Get workflow runs
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+              status: 'completed'
+            });
+
+            let deletedCount = 0;
+
+            for (const run of workflows.data.workflow_runs) {
+              const runDate = new Date(run.created_at);
+              
+              // Only delete old, completed runs (keep recent ones for debugging)
+              if (runDate < cutoffDate && 
+                  (run.status === 'completed' || run.status === 'cancelled') &&
+                  run.conclusion !== 'failure') { // Keep failed runs for analysis
+                
+                try {
+                  await github.rest.actions.deleteWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id
+                  });
+                  
+                  deletedCount++;
+                  console.log(`🗑️ Deleted workflow run: ${run.name} (#${run.run_number})`);
+                } catch (error) {
+                  console.log(`❌ Failed to delete run #${run.run_number}: ${error.message}`);
+                }
+              }
+            }
+
+            console.log(`\n📊 Workflow Cleanup Summary:`);
+            console.log(`• Deleted runs: ${deletedCount}`);
+
+  # Report cleanup results
+  cleanup-summary:
+    name: 📋 Cleanup Summary
+    runs-on: ubuntu-latest
+    needs: [cleanup-caches, cleanup-workflow-runs]
+    if: always()
+
+    steps:
+      - name: 📋 Generate Cleanup Report
+        run: |
+          echo "🧹 Final Golf SaaS - Cache Cleanup Report"
+          echo "========================================"
+          echo ""
+          echo "🕐 Cleanup completed at: $(date -u)"
+          echo "🧹 Cleanup type: ${{ github.event.inputs.cleanup_type || 'standard' }}"
+          echo "📅 Max age: ${{ github.event.inputs.max_cache_age_days || '7' }} days"
+          echo ""
+          echo "📊 Job Status:"
+          echo "• Cache cleanup: ${{ needs.cleanup-caches.result }}"
+          echo "• Workflow cleanup: ${{ needs.cleanup-workflow-runs.result }}"
+          echo ""
+          echo "✅ Cache cleanup completed successfully"
+          echo "📈 This helps maintain optimal CI/CD performance"
+
+# Environment variables
+env:
+  FORCE_COLOR: 3
