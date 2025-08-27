@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Final Golf SaaS - Commit message hook
+# Validates commit messages against conventional commits format
+
+echo "🔍 Validating commit message..."
+
+# Run commitlint on the commit message
+pnpm exec commitlint --edit "$1"
+
+echo "✅ Commit message is valid!"

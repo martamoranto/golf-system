@@ -121,7 +121,91 @@ Thumbs.db
 **/node_modules/.cache/turbo/
 
 # Docker development
-.env.docker
 docker/postgres/data/
 docker/redis/data/
 docker/minio/data/
+
+# Security & Secrets
+*.pem
+*.key
+*.p12
+*.pfx
+auth.json
+service-account.json
+secrets.json
+.secrets/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Generated files
+schema.generated.ts
+*.generated.*
+auto-generated/
+
+# Testing
+test-results/
+playwright-report/
+coverage/
+.nyc_output
+
+# Monitoring & Logs
+*.log.*
+logs/
+sentry.properties
+
+# Build artifacts
+.turbo/
+.next/
+dist/
+build/
+out/
+
+# Cache directories
+.cache/
+.parcel-cache/
+.eslintcache
+*.tsbuildinfo
+
+# Environment files (keep .env.example files)
+.env
+.env.local
+.env.development
+.env.staging  
+.env.production
+.env.test
+!.env.example
+!.env.*.example
+
+# Backups
+*.backup
+backup/
+dumps/
+
+# Platform specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+*.patch
+*.diff
+
+# Documentation generated
+docs/api/
+docs/build/
