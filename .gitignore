@@ -119,3 +119,9 @@ Thumbs.db
 # Turborepo cache
 .turbo/
 **/node_modules/.cache/turbo/
+
+# Docker development
+.env.docker
+docker/postgres/data/
+docker/redis/data/
+docker/minio/data/

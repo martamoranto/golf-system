@@ -33,7 +33,7 @@
 
 ### 0.2 Development Environment
 
-- [ ] **0.2.1** Docker Compose Setup
+- [x] **0.2.1** Docker Compose Setup
   - Configure PostgreSQL 15 container with health checks
   - Setup Redis container with persistence volume
   - Add MinIO container for S3-compatible storage

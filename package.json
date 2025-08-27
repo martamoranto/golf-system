@@ -87,7 +87,17 @@
     "validate": "node scripts/validate-workspace.js",
     "check:deps": "node scripts/check-deps.js",
     "check:health": "pnpm validate && pnpm check:deps",
-    "doctor": "pnpm check:health && pnpm ci:validate"
+    "doctor": "pnpm check:health && pnpm ci:validate",
+    "docker:up": "scripts/docker-dev.sh up",
+    "docker:down": "scripts/docker-dev.sh down",
+    "docker:restart": "scripts/docker-dev.sh restart",
+    "docker:status": "scripts/docker-dev.sh status",
+    "docker:logs": "scripts/docker-dev.sh logs",
+    "docker:health": "scripts/docker-dev.sh health",
+    "docker:reset": "scripts/docker-dev.sh reset",
+    "services:up": "pnpm docker:up",
+    "services:down": "pnpm docker:down",
+    "services:status": "pnpm docker:status"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
