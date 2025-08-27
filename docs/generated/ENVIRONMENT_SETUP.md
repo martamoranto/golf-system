@@ -5,30 +5,35 @@ Quick setup guide for Final Golf SaaS development environment.
 ## 🏁 Quick Start
 
 ### 1. Run Setup Script
+
 ```bash
 # Automated environment setup
 pnpm env:setup
 ```
 
 This script will:
+
 - ✅ Copy all `.env.example` files to appropriate `.env` files
 - ✅ Create basic root `.env` configuration
 - ✅ Validate environment configuration
 - ✅ Provide next steps guidance
 
 ### 2. Start Docker Services
+
 ```bash
 # Start all infrastructure services
 pnpm services:up
 ```
 
 ### 3. Generate Production Secrets
+
 ```bash
 # Generate secure random secrets for production
 pnpm env:generate-secrets
 ```
 
 ### 4. Validate Configuration
+
 ```bash
 # Validate all environment variables
 pnpm env:validate
@@ -63,6 +68,7 @@ Final Golf/
 If you prefer manual setup or the automated script doesn't work:
 
 ### Step 1: Copy Environment Templates
+
 ```bash
 # Copy all .env.example files
 find . -name ".env.example" -exec bash -c 'cp "$1" "${1%.example}"' _ {} \;
@@ -75,6 +81,7 @@ cp services/worker/.env.example services/worker/.env
 ```
 
 ### Step 2: Configure Required Variables
+
 Edit each `.env` file and set these minimum required variables:
 
 ```env
@@ -97,6 +104,7 @@ S3_REGION="us-east-1"
 ```
 
 ### Step 3: Application-Specific URLs
+
 Update these URLs for each Next.js app:
 
 ```env
@@ -104,7 +112,7 @@ Update these URLs for each Next.js app:
 NEXTAUTH_URL="http://localhost:3000"
 NEXT_PUBLIC_API_URL="http://localhost:3001"
 
-# apps/onsite-pwa/.env.local  
+# apps/onsite-pwa/.env.local
 NEXTAUTH_URL="http://localhost:3010"
 NEXT_PUBLIC_API_URL="http://localhost:3001"
 
@@ -122,6 +130,7 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 ## 🔍 Environment Validation
 
 ### Automated Validation
+
 ```bash
 # Run comprehensive environment validation
 pnpm env:validate
@@ -133,18 +142,21 @@ pnpm env:generate-secrets
 ### Manual Validation Checklist
 
 #### ✅ Required Variables Present
+
 - [ ] `DATABASE_URL` - PostgreSQL connection string
 - [ ] `REDIS_URL` - Redis connection string
 - [ ] `JWT_SECRET` - JWT signing secret (32+ chars)
 - [ ] `NEXTAUTH_SECRET` - NextAuth encryption secret (32+ chars)
 
 #### ✅ Service-Specific Configuration
+
 - [ ] **API Gateway**: `PORT`, `CORS_ORIGINS`
 - [ ] **WebSocket Service**: `PORT`, `MAX_CONNECTIONS`
 - [ ] **Worker Service**: Queue configuration
 - [ ] **Webhook Service**: Webhook secrets
 
 #### ✅ Security Check
+
 - [ ] All secrets are 32+ characters long
 - [ ] No development placeholders in production
 - [ ] Webhook secrets configured for external services
@@ -155,6 +167,7 @@ pnpm env:generate-secrets
 ## 🔐 Production Configuration
 
 ### Security Checklist
+
 - [ ] Generate secure random secrets using `pnpm env:generate-secrets`
 - [ ] Replace all development defaults
 - [ ] Configure real payment provider credentials
@@ -163,6 +176,7 @@ pnpm env:generate-secrets
 - [ ] Configure monitoring (Sentry, etc.)
 
 ### Required Production Services
+
 1. **PostgreSQL Database** - Managed database service (AWS RDS, Neon, etc.)
 2. **Redis Cache** - Redis service (AWS ElastiCache, Upstash, etc.)
 3. **File Storage** - S3-compatible storage (AWS S3, CloudFlare R2, etc.)
@@ -170,6 +184,7 @@ pnpm env:generate-secrets
 5. **Payment Processing** - PayMongo and/or Stripe accounts
 
 ### Environment-Specific Files
+
 ```bash
 # Different environments
 .env.development     # Development overrides
@@ -184,6 +199,7 @@ pnpm env:generate-secrets
 ### Common Issues
 
 #### Database Connection Errors
+
 ```bash
 # Test database connection
 psql postgresql://postgres:postgres123@localhost:5432/final_golf_dev
@@ -192,7 +208,8 @@ psql postgresql://postgres:postgres123@localhost:5432/final_golf_dev
 pnpm services:status
 ```
 
-#### Redis Connection Errors  
+#### Redis Connection Errors
+
 ```bash
 # Test Redis connection
 redis-cli -u redis://localhost:6379 ping
@@ -202,6 +219,7 @@ docker logs gbs-redis
 ```
 
 #### Permission Errors
+
 ```bash
 # Fix script permissions
 chmod +x scripts/setup-env.sh
@@ -209,6 +227,7 @@ chmod +x scripts/docker-dev.sh
 ```
 
 #### Port Conflicts
+
 ```bash
 # Check what's using ports
 lsof -i :3000  # Web app
@@ -220,11 +239,11 @@ lsof -i :9000  # MinIO
 
 ### Getting Help
 
-1. **Check Documentation**: 
+1. **Check Documentation**:
    - `docs/ENVIRONMENT_VARIABLES.md` - Complete variable reference
    - `DOCKER.md` - Docker setup guide
-   
 2. **Validate Configuration**:
+
    ```bash
    pnpm env:validate
    ```
